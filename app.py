@@ -1,6 +1,4 @@
 import sqlite3
-import os
-from datetime import date
 from flask import Flask, render_template, jsonify, request, g, send_file
 import pandas as pd
 
