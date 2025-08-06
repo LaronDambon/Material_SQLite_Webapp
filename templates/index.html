@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warehouse DB Viewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <button class="burger-btn">&#9776;</button>
+    <div class="container">
+        <aside class="sidebar">
+            <h1>База Данных</h1>
+            
+            <div class="btn-group">
+                <button id="show-sql-form-btn" class="btn-sql">SQL-команда</button>
+            </div>
+            
+            <h2>Таблицы</h2>
+            <nav id="tables-nav"></nav>
+            
+            <h2>Представления</h2>
+            <nav id="views-nav"></nav>
+        </aside>
+
+        <main class="content">
+
+            <div id="sql-form-container" class="form-section hidden">
+                <h2 id="sql-title">Выполнить SQL-команду</h2>
+                <form id="sql-form">
+                    <div class="form-group">
+                        <label for="sql-command-text">SQL-команда:</label>
+                        <textarea id="sql-command-text" name="sql" placeholder="Пример: SELECT * FROM operation WHERE type='Приход'"></textarea>
+                    </div>
+                    <button type="submit" class="btn-form btn-submit">Выполнить</button>
+                </form>
+                <div id="sql-feedback"></div>
+            </div>
+
+            <div id="data-view-container">
+                <h2 id="data-title">Выберите таблицу или представление для просмотра</h2>
+                
+                <div class="table-controls">
+                    </div>
+
+                <div class="table-wrapper">
+                    <table id="data-table">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="insert-modal-overlay" class="modal-overlay">
+        <div class="modal-content">
+            <button class="close-btn">&times;</button>
+            <h2 id="modal-form-title">Добавить запись</h2>
+            <form id="quick-insert-form">
+                </form>
+            <div id="form-feedback"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
