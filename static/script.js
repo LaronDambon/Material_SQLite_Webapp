@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const sidebar = document.querySelector('.sidebar');
     const burgerBtn = document.querySelector('.burger-btn');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
 
     const columnComments = {
         name: 'Наименование',
@@ -34,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     let activeTableName = null;
+    let activeItemType = null;
     
     // --- ИНИЦИАЛИЗАЦИЯ ---
 
@@ -62,6 +64,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function showModal() {
         insertModalOverlay.classList.add('visible');
     }
+    
+    function hideSidebarAndOverlay() {
+        if (window.innerWidth <= 768) {
+            sidebar.classList.remove('active');
+            sidebarOverlay.classList.remove('active');
+        }
+    }
 
     async function loadData(name, type) {
         try {
@@ -73,14 +82,10 @@ document.addEventListener('DOMContentLoaded', () => {
             dataTable.innerHTML = '';
             tableControls.innerHTML = '';
             
-            if (type === 'table') {
-                await buildTableControls(name);
-                tableControls.classList.remove('hidden');
-            } else {
-                tableControls.classList.add('hidden');
-            }
+            await buildTableControls(name, type);
             
             activeTableName = name;
+            activeItemType = type;
 
             if (data.length === 0) {
                 dataTable.innerHTML = '<tr><td colspan="100%">Нет данных для отображения.</td></tr>';
@@ -114,63 +119,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- ДИНАМИЧЕСКИЕ ФОРМЫ И УПРАВЛЕНИЕ ---
 
-    async function buildTableControls(tableName) {
+    async function buildTableControls(name, type) {
         tableControls.innerHTML = '';
-        
-        // Кнопка добавления
-        const insertBtn = document.createElement('button');
-        insertBtn.className = 'btn-form btn-insert';
-        insertBtn.textContent = 'Добавить запись';
-        insertBtn.addEventListener('click', async () => {
-            modalFormTitle.textContent = `Добавить запись в таблицу '${tableName}'`;
-            await buildInsertFormFields(tableName);
-            showModal();
-        });
-        
+        tableControls.classList.remove('hidden');
+
         // Кнопка экспорта
         const exportBtn = document.createElement('button');
         exportBtn.className = 'btn-form btn-export';
         exportBtn.textContent = 'Экспорт в Excel';
         exportBtn.addEventListener('click', () => {
-            window.location.href = `/api/export_to_excel/${tableName}`;
+            window.location.href = `/api/export_to_excel/${name}`;
         });
-        
-        // Кнопка импорта
-        const importLabel = document.createElement('label');
-        importLabel.className = 'btn-form btn-import';
-        importLabel.textContent = 'Импорт из Excel';
-        importLabel.style.cursor = 'pointer';
-        const importInput = document.createElement('input');
-        importInput.type = 'file';
-        importInput.style.display = 'none';
-        importInput.accept = '.xlsx';
-        importInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const formData = new FormData();
-            formData.append('file', file);
-
-            try {
-                const response = await fetch(`/api/import_from_excel/${tableName}`, {
-                    method: 'POST',
-                    body: formData
-                });
-                const result = await response.json();
-                alert(result.message);
-                if (result.status === 'success') {
-                    loadData(tableName, 'table');
-                }
-            } catch (error) {
-                console.error('Ошибка при импорте:', error);
-                alert('Ошибка сети при импорте файла.');
-            }
-        });
-        importLabel.appendChild(importInput);
-
-        tableControls.appendChild(insertBtn);
         tableControls.appendChild(exportBtn);
-        tableControls.appendChild(importLabel);
+
+        if (type === 'table') {
+            // Кнопка добавления
+            const insertBtn = document.createElement('button');
+            insertBtn.className = 'btn-form btn-insert';
+            insertBtn.textContent = 'Добавить запись';
+            insertBtn.addEventListener('click', async () => {
+                modalFormTitle.textContent = `Добавить запись в таблицу '${name}'`;
+                await buildInsertFormFields(name);
+                showModal();
+            });
+            tableControls.appendChild(insertBtn);
+            
+            // Кнопка импорта
+            const importLabel = document.createElement('label');
+            importLabel.className = 'btn-form btn-import';
+            importLabel.textContent = 'Импорт из Excel';
+            importLabel.style.cursor = 'pointer';
+            const importInput = document.createElement('input');
+            importInput.type = 'file';
+            importInput.style.display = 'none';
+            importInput.accept = '.xlsx';
+            importInput.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch(`/api/import_from_excel/${name}`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
+                    showFeedback(sqlFeedback, result.message, result.status === 'success' ? 'feedback-success' : 'feedback-error');
+                    if (result.status === 'success') {
+                        loadData(name, 'table');
+                    }
+                } catch (error) {
+                    console.error('Ошибка при импорте:', error);
+                    showFeedback(sqlFeedback, 'Ошибка сети при импорте файла.', 'feedback-error');
+                }
+            });
+            importLabel.appendChild(importInput);
+            tableControls.appendChild(importLabel);
+        }
     }
 
     async function buildInsertFormFields(tableName) {
@@ -254,11 +261,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (result.status === 'success') {
                 modalForm.reset();
                 if (activeTableName) {
-                    // Перестраиваем форму для обновления даты
                     await buildInsertFormFields(activeTableName);
                     loadData(activeTableName, 'table');
                 }
-                setTimeout(hideModal, 2000); // Закрываем модальное окно через 2 секунды
+                setTimeout(hideModal, 2000);
             }
         } catch (error) {
             console.error('Ошибка при отправке формы:', error);
@@ -287,7 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     showFeedback(sqlFeedback, result.message, 'feedback-success');
                     loadSchema();
                     if (activeTableName) {
-                        loadData(activeTableName, 'table');
+                        loadData(activeTableName, activeItemType);
                     }
                 }
             } else {
@@ -306,12 +312,15 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             sqlFormContainer.classList.add('hidden');
         }
+        hideSidebarAndOverlay();
     });
     
     burgerBtn.addEventListener('click', () => {
-        sidebar.classList.toggle('hidden');
+        sidebar.classList.add('active');
+        sidebarOverlay.classList.add('active');
     });
 
+    sidebarOverlay.addEventListener('click', hideSidebarAndOverlay);
     modalCloseBtn.addEventListener('click', hideModal);
     insertModalOverlay.addEventListener('click', (e) => {
         if (e.target === insertModalOverlay) {
@@ -321,7 +330,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     window.addEventListener('resize', () => {
         if (window.innerWidth > 768) {
-            sidebar.classList.remove('hidden');
+            sidebar.classList.remove('active');
+            sidebarOverlay.classList.remove('active');
         }
     });
 
@@ -340,9 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.remove('active'));
                 link.classList.add('active');
                 loadData(item, type);
-                if (window.innerWidth <= 768) {
-                    sidebar.classList.add('hidden');
-                }
+                hideSidebarAndOverlay();
             });
             navElement.appendChild(link);
         });
@@ -357,7 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showFeedback(element, message, className) {
         element.textContent = message;
-        element.className = className;
+        element.className = 'feedback ' + className;
         element.style.display = 'block';
 
         setTimeout(() => {

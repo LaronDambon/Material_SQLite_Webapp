@@ -3,7 +3,6 @@
 
 # Запуск
 ```
-pip install pandas flask sqlite3
-python db_setup.py
+pip install flask pandas openpyxl
 python app.py
 ```

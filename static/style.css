@@ -22,12 +22,6 @@ body {
     transition: transform 0.3s ease-in-out;
 }
 
-.sidebar.hidden {
-    transform: translateX(-100%);
-    position: absolute;
-    z-index: 100;
-}
-
 .sidebar h1 {
     font-size: 24px;
     margin-top: 0;
@@ -72,18 +66,26 @@ body {
     margin-bottom: 20px;
 }
 
-.sidebar button {
+/* Обновленные стили для всех кнопок */
+.btn-sql, .btn-form {
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+.btn-sql:hover, .btn-form:hover {
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+}
+
+.btn-sql {
     width: 100%;
     padding: 12px;
     color: white;
     border: none;
-    border-radius: 5px;
     font-size: 16px;
     cursor: pointer;
-    transition: background-color 0.2s;
+    background-color: #ffc107;
 }
-
-.btn-sql { background-color: #ffc107; }
 .btn-sql:hover { background-color: #e0a800; }
 
 .content {
@@ -93,22 +95,65 @@ body {
     position: relative;
 }
 
-.burger-btn {
-    display: none;
-    position: fixed;
-    top: 10px;
-    left: 10px;
-    z-index: 101;
-    background: #007bff;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    padding: 8px 12px;
-    cursor: pointer;
-    font-size: 24px;
+/* Убеждаемся, что кнопка-гамбургер скрыта на широких экранах */
+@media (min-width: 769px) {
+    .burger-btn {
+        display: none;
+    }
 }
-.burger-btn.hidden {
-    display: none !important;
+
+/* Обновленные стили для кнопки-гамбургера и адаптивность для мобильных устройств */
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+        height: auto;
+    }
+    .sidebar {
+        width: 250px;
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100%;
+        z-index: 1000;
+        transform: translateX(-100%);
+    }
+    .sidebar.active {
+        transform: translateX(0);
+    }
+    .burger-btn {
+        display: flex;
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        z-index: 1001;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 45px;
+        height: 45px;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        font-size: 24px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+    }
+    .burger-btn:hover {
+        background: #0056b3;
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        transform: scale(1.05);
+    }
+    .sidebar h1 {
+        padding-left: 55px; /* Добавляем отступ, чтобы не перекрывать кнопку */
+    }
+    /* Скрываем кнопку, когда сайдбар активен */
+    .sidebar.active ~ .burger-btn {
+        display: none;
+    }
+    .content {
+        padding-top: 60px; /* Добавляем отступ, чтобы контент не перекрывался кнопкой */
+    }
 }
 
 #data-title, #sql-title {
@@ -273,32 +318,20 @@ tbody tr:hover {
     display: block;
 }
 
-
-/* Адаптивность */
-@media (max-width: 768px) {
-    .sidebar {
-        width: 250px;
-    }
-    .burger-btn {
-        display: block;
-    }
-    .content {
-        padding-top: 60px;
-    }
-    .container {
-        flex-direction: column;
-    }
-    .sidebar {
-        width: 100%;
-        height: auto;
-        position: static;
-        transform: none;
-        order: -1;
-    }
-    .sidebar.hidden {
-        display: none;
-    }
-    .table-controls {
-        flex-direction: column;
-    }
+/* Оверлей для мобильного меню */
+.sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4);
+    z-index: 999;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease-in-out;
+}
+.sidebar-overlay.active {
+    opacity: 1;
+    visibility: visible;
 }

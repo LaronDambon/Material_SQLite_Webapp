@@ -1,6 +1,8 @@
+# app.py
 import sqlite3
 from flask import Flask, render_template, jsonify, request, g, send_file
 import pandas as pd
+import io
 
 app = Flask(__name__)
 DATABASE = 'database.db'
@@ -150,17 +152,34 @@ def execute_sql_command():
 
 @app.route('/api/export_to_excel/<table_name>')
 def export_to_excel(table_name):
-    """Экспортирует данные из таблицы/представления в Excel-файл."""
-    db = get_db()
+    """
+    Экспортирует данные из таблицы/представления в Excel-файл
+    и отправляет его пользователю для загрузки.
+    """
     try:
+        db = get_db()
+        # Считываем данные из БД в DataFrame
         df = pd.read_sql_query(f"SELECT * FROM {table_name}", db)
-        file_path = f"{table_name}_export.xlsx"
-        df.to_excel(file_path, index=False)
-        return send_file(file_path, as_attachment=True)
+        
+        # Создаем буфер в памяти
+        output = io.BytesIO()
+        
+        # Записываем DataFrame в буфер, не создавая файл на диске
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name=table_name)
+        
+        # Перемещаем указатель в начало буфера
+        output.seek(0)
+        
+        # Отправляем буфер как файл
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=f"{table_name}_export.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
     except Exception as e:
         return jsonify({'status': 'error', 'message': f"Ошибка при экспорте: {e}"}), 500
-    finally:
-        db.close()
 
 @app.route('/api/import_from_excel/<table_name>', methods=['POST'])
 def import_from_excel(table_name):
