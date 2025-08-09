@@ -335,3 +335,45 @@ tbody tr:hover {
     opacity: 1;
     visibility: visible;
 }
+
+/* Стили для AI-помощника */
+#ai-help-container {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+.list-group {
+    border: 1px solid #eee;
+    border-radius: 5px;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 15px;
+}
+.list-item {
+    padding: 10px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+}
+.list-item:hover {
+    background-color: #f0f0f0;
+}
+.list-item.active {
+    background-color: #007bff;
+    color: white;
+}
+.list-item-suggestion {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.btn-link {
+    background-color: #28a745;
+    padding: 8px 12px;
+}
+.btn-link:hover {
+    background-color: #218838;
+}

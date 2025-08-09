@@ -42,7 +42,15 @@
                 <h2 id="data-title">Выберите таблицу или представление для просмотра</h2>
                 
                 <div class="table-controls">
-                    </div>
+                </div>
+                
+                <div id="ai-help-container" class="form-section hidden">
+                    <h2 id="ai-help-title">AI-помощник: Группировка наименований</h2>
+                    <p>Найдены новые уникальные наименования, не связанные с существующими группами. Выберите наименование, чтобы получить предложения по группировке.</p>
+                    <div id="unique-names-list" class="list-group"></div>
+                    <div id="ai-suggestions-list" class="list-group"></div>
+                    <div id="ai-feedback" class="feedback"></div>
+                </div>
 
                 <div class="table-wrapper">
                     <table id="data-table">
@@ -59,7 +67,7 @@
             <button class="close-btn">&times;</button>
             <h2 id="modal-form-title">Добавить запись</h2>
             <form id="quick-insert-form">
-                </form>
+            </form>
             <div id="form-feedback"></div>
         </div>
     </div>

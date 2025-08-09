@@ -12,7 +12,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const sqlFeedback = document.getElementById('sql-feedback');
     const showSqlFormBtn = document.getElementById('show-sql-form-btn');
     
-    // Элементы модального окна
     const insertModalOverlay = document.getElementById('insert-modal-overlay');
     const modalForm = document.getElementById('quick-insert-form');
     const modalFormTitle = document.getElementById('modal-form-title');
@@ -22,6 +21,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const sidebar = document.querySelector('.sidebar');
     const burgerBtn = document.querySelector('.burger-btn');
     const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+    // Новые элементы для AI-помощи
+    const aiHelpContainer = document.getElementById('ai-help-container');
+    const uniqueNamesList = document.getElementById('unique-names-list');
+    const aiSuggestionsList = document.getElementById('ai-suggestions-list');
+    const aiFeedback = document.getElementById('ai-feedback');
 
     const columnComments = {
         name: 'Наименование',
@@ -36,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let activeTableName = null;
     let activeItemType = null;
+    let uniqueNamesToProcess = [];
     
     // --- ИНИЦИАЛИЗАЦИЯ ---
 
@@ -55,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function hideAllForms() {
         sqlFormContainer.classList.add('hidden');
+        aiHelpContainer.classList.add('hidden');
     }
     
     function hideModal() {
@@ -110,6 +117,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 dataTable.appendChild(row);
             });
+
+            // Если загружен 'Уникальные_не_внесенные_имена', показываем AI-помощник
+            if (name === 'Уникальные_не_внесенные_имена') {
+                uniqueNamesToProcess = data.map(item => item.Наименование);
+                renderUniqueNamesList();
+                aiHelpContainer.classList.remove('hidden');
+            } else {
+                aiHelpContainer.classList.add('hidden');
+            }
         } catch (error) {
             console.error(`Ошибка при загрузке данных для ${name}:`, error);
             dataTitle.textContent = `Ошибка загрузки данных`;
@@ -123,7 +139,6 @@ document.addEventListener('DOMContentLoaded', () => {
         tableControls.innerHTML = '';
         tableControls.classList.remove('hidden');
 
-        // Кнопка экспорта
         const exportBtn = document.createElement('button');
         exportBtn.className = 'btn-form btn-export';
         exportBtn.textContent = 'Экспорт в Excel';
@@ -133,7 +148,6 @@ document.addEventListener('DOMContentLoaded', () => {
         tableControls.appendChild(exportBtn);
 
         if (type === 'table') {
-            // Кнопка добавления
             const insertBtn = document.createElement('button');
             insertBtn.className = 'btn-form btn-insert';
             insertBtn.textContent = 'Добавить запись';
@@ -144,7 +158,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             tableControls.appendChild(insertBtn);
             
-            // Кнопка импорта
             const importLabel = document.createElement('label');
             importLabel.className = 'btn-form btn-import';
             importLabel.textContent = 'Импорт из Excel';
@@ -240,7 +253,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData(modalForm);
         const data = Object.fromEntries(formData.entries());
         
-        // Преобразование типов
         for (const key in data) {
             const input = document.getElementById(`insert-${key}`);
             if (input && input.type === 'number') {
@@ -402,7 +414,111 @@ document.addEventListener('DOMContentLoaded', () => {
             dataTable.appendChild(row);
         });
     }
+    
+    // --- AI-ПОМОЩНИК ---
 
+    function renderUniqueNamesList() {
+        uniqueNamesList.innerHTML = '';
+        if (uniqueNamesToProcess.length === 0) {
+            uniqueNamesList.innerHTML = '<p>Нет новых наименований для группировки.</p>';
+            return;
+        }
+
+        uniqueNamesToProcess.forEach(name => {
+            const item = document.createElement('div');
+            item.className = 'list-item';
+            item.textContent = name;
+            item.dataset.name = name;
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
+                item.classList.add('active');
+                fetchAISuggestions(name);
+            });
+            uniqueNamesList.appendChild(item);
+        });
+    }
+
+    async function fetchAISuggestions(newName) {
+        showFeedback(aiFeedback, 'Запрос к AI...', 'feedback-info');
+        aiSuggestionsList.innerHTML = '';
+
+        try {
+            const response = await fetch('/api/data/altnames');
+            const allAltNames = await response.json();
+            
+            const existingNames = allAltNames.map(item => ({ id: item.id, name: item.altname }));
+            
+            const aiResponse = await fetch('/api/ai_suggestions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_name: newName, existing_names: existingNames })
+            });
+
+            const result = await aiResponse.json();
+
+            if (result.status === 'success') {
+                renderAISuggestions(newName, result.suggestions);
+                showFeedback(aiFeedback, 'Предложения получены.', 'feedback-success');
+            } else {
+                showFeedback(aiFeedback, result.message, 'feedback-error');
+            }
+        } catch (error) {
+            console.error('Ошибка при получении предложений AI:', error);
+            showFeedback(aiFeedback, 'Ошибка сети при получении предложений.', 'feedback-error');
+        }
+    }
+    
+    function renderAISuggestions(newName, suggestions) {
+        aiSuggestionsList.innerHTML = '';
+        if (suggestions.length === 0) {
+            aiSuggestionsList.innerHTML = '<p>AI не нашел подходящих вариантов.</p>';
+            const createNewBtn = document.createElement('button');
+            createNewBtn.textContent = 'Создать новую группу';
+            createNewBtn.className = 'btn-form btn-submit';
+            createNewBtn.addEventListener('click', () => linkNewAltname(newName, null));
+            aiSuggestionsList.appendChild(createNewBtn);
+            return;
+        }
+
+        suggestions.forEach(s => {
+            const item = document.createElement('div');
+            item.className = 'list-item-suggestion';
+            item.innerHTML = `
+                <p><strong>${s.name}</strong> (id: ${s.id}, схожесть: ${Math.round(s.similarity * 100)}%)</p>
+                <button class="btn-form btn-link" data-id="${s.id}">Связать</button>
+            `;
+            item.querySelector('.btn-link').addEventListener('click', () => linkNewAltname(newName, s.id));
+            aiSuggestionsList.appendChild(item);
+        });
+
+        const createNewBtn = document.createElement('button');
+        createNewBtn.textContent = 'Создать новую группу';
+        createNewBtn.className = 'btn-form btn-submit';
+        createNewBtn.style.marginTop = '10px';
+        createNewBtn.addEventListener('click', () => linkNewAltname(newName, null));
+        aiSuggestionsList.appendChild(createNewBtn);
+    }
+    
+    async function linkNewAltname(newName, groupId) {
+        showFeedback(aiFeedback, 'Связываю наименование...', 'feedback-info');
+        try {
+            const response = await fetch('/api/link_altname', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_name: newName, id: groupId })
+            });
+            const result = await response.json();
+            showFeedback(aiFeedback, result.message, result.status === 'success' ? 'feedback-success' : 'feedback-error');
+            if (result.status === 'success') {
+                // Обновляем список уникальных имен
+                loadData('Уникальные_не_внесенные_имена', 'view');
+            }
+        } catch (error) {
+            console.error('Ошибка при связывании:', error);
+            showFeedback(aiFeedback, 'Ошибка сети при связывании.', 'feedback-error');
+        }
+    }
+ 
     // --- ЗАПУСК ---
     loadSchema();
 });

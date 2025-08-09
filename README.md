@@ -15,3 +15,15 @@ python app.py
 ```
 python db_setup.py
 ```
+
+# AI помощь
+
+Интегрирован AI ассистент для поиска альтернативных имен и добавления их в таблицу. Для запуска нужно установить ollama и загрузить модель.
+
+```
+https://ollama.com/download/OllamaSetup.exe
+```
+После загрузить нужно загрузить модель через cmd или powershell
+```
+ollama pull gemma3n:e2b
+```

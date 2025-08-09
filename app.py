@@ -3,9 +3,16 @@ import sqlite3
 from flask import Flask, render_template, jsonify, request, g, send_file
 import pandas as pd
 import io
+import requests
+import json
+import re
 
 app = Flask(__name__)
 DATABASE = 'database.db'
+
+# Адрес вашего Ollama сервера
+OLLAMA_SERVER_URL = 'http://127.0.0.1:11434'
+OLLAMA_MODEL_NAME = 'gemma3n:e2b'
 
 def get_db():
     """Открывает новое соединение с БД для каждого запроса, если его еще нет."""
@@ -86,16 +93,13 @@ def add_row(table_name):
         cursor.execute(f"PRAGMA table_info({table_name})")
         columns_info = {row['name']: row for row in cursor.fetchall()}
         
-        # Фильтруем столбцы, чтобы исключить ID, который часто является автоинкрементным
         insertable_columns = [col for col in columns_info if not columns_info[col]['pk']]
         
-        # Проверяем обязательные поля (NOT NULL)
         for col_name in insertable_columns:
             col_info = columns_info[col_name]
             if col_info['notnull'] == 1 and not data.get(col_name):
                 return jsonify({'status': 'error', 'message': f"Поле '{col_name}' является обязательным"}), 400
 
-        # Собираем данные для вставки, преобразуя пустые строки в None
         values = []
         for col_name in insertable_columns:
             value = data.get(col_name)
@@ -158,20 +162,15 @@ def export_to_excel(table_name):
     """
     try:
         db = get_db()
-        # Считываем данные из БД в DataFrame
         df = pd.read_sql_query(f"SELECT * FROM {table_name}", db)
         
-        # Создаем буфер в памяти
         output = io.BytesIO()
         
-        # Записываем DataFrame в буфер, не создавая файл на диске
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name=table_name)
         
-        # Перемещаем указатель в начало буфера
         output.seek(0)
         
-        # Отправляем буфер как файл
         return send_file(
             output,
             as_attachment=True,
@@ -202,6 +201,105 @@ def import_from_excel(table_name):
             return jsonify({'status': 'error', 'message': f"Ошибка при импорте: {e}"}), 500
     
     return jsonify({'status': 'error', 'message': 'Неизвестная ошибка'}), 500
+
+def extract_json_from_string(text):
+    """
+    Извлекает JSON-массив из строки, игнорируя лишний текст.
+    Ищет шаблон, который начинается с `[` и заканчивается на `]`.
+    """
+    match = re.search(r'\[\s*\{.*\}\s*\]', text, re.DOTALL)
+    if match:
+        return match.group(0)
+    return None
+
+@app.route('/api/ai_suggestions', methods=['POST'])
+def get_ai_suggestions():
+    """
+    Получает предложения от Ollama для нового наименования,
+    сравнивая его с существующими альтернативными именами.
+    """
+    try:
+        data = request.get_json()
+        new_name = data.get('new_name')
+        existing_names = data.get('existing_names')
+
+        if not new_name or not existing_names:
+            return jsonify({'status': 'error', 'message': 'Недостаточно данных для анализа.'}), 400
+        
+        # Подготовка промпта для Ollama
+        prompt_text = f"""
+        У нас есть новое наименование: '{new_name}'.
+        Есть список существующих групп, где каждый элемент это пара (id, наименование).
+        Твоя задача - найти 3 наиболее подходящих id из списка для нового наименования, основываясь на семантической схожести.
+        Формат ответа - JSON массив, где каждый элемент это объект с полями 'id' (как строка), 'name' и 'similarity' (число от 0 до 1).
+        Не пиши никаких пояснений, только JSON.
+         
+        Список существующих групп:
+        {json.dumps(existing_names, ensure_ascii=False)}
+        """
+
+        ollama_data = {
+            'model': OLLAMA_MODEL_NAME,
+            'prompt': prompt_text,
+            'stream': False,
+            'options': {'num_ctx': 4096}
+        }
+        
+        response = requests.post(f'{OLLAMA_SERVER_URL}/api/generate', json=ollama_data)
+        response.raise_for_status()
+        print(response)
+        # Парсинг ответа Ollama
+        ollama_response = response.json()
+        raw_response = ollama_response['response'].strip()
+        
+        # Используем новую функцию для извлечения JSON
+        json_string = extract_json_from_string(raw_response)
+
+        if not json_string:
+            # Если JSON не был найден, возвращаем пустой массив
+            suggestions = []
+        else:
+            suggestions = json.loads(json_string)
+        
+        return jsonify({'status': 'success', 'suggestions': suggestions})
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({'status': 'error', 'message': f'Ошибка при обращении к серверу Ollama: {e}'}), 500
+    except json.JSONDecodeError:
+        return jsonify({'status': 'error', 'message': f'Некорректный формат ответа от Ollama: {raw_response}'}), 500
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Внутренняя ошибка сервера: {e}'}), 500
+
+@app.route('/api/link_altname', methods=['POST'])
+def link_altname():
+    """
+    Связывает новое наименование с существующей группой altnames.
+    """
+    try:
+        data = request.get_json()
+        new_name = data.get('new_name')
+        id = data.get('id')
+        
+        if not new_name or id is None:
+            return jsonify({'status': 'error', 'message': 'Недостаточно данных.'}), 400
+        
+        db = get_db()
+        cursor = db.cursor()
+        
+        # Проверяем, существует ли уже такая связь
+        cursor.execute("SELECT * FROM altnames WHERE altname = ? AND id = ?", (new_name, id))
+        if cursor.fetchone():
+            return jsonify({'status': 'error', 'message': f"Наименование '{new_name}' уже связано с группой ID {id}."}), 409
+
+        cursor.execute("INSERT INTO altnames (id, altname) VALUES (?, ?)", (id, new_name))
+        db.commit()
+        
+        return jsonify({'status': 'success', 'message': f"Наименование '{new_name}' успешно связано с группой ID {id}."})
+        
+    except sqlite3.Error as e:
+        return jsonify({'status': 'error', 'message': f'Ошибка базы данных: {e}'}), 500
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Внутренняя ошибка сервера: {e}'}), 500
 
 
 if __name__ == '__main__':
