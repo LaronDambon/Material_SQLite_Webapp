@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Warehouse DB Viewer</title>
+    <title>DB Storage view</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <button class="burger-btn">&#9776;</button>
+    <canvas id="fractal-background"></canvas>
+
+    <button id="sidebar-toggle-btn" class="sidebar-toggle-btn">☰</button>
     <div id="sidebar-overlay" class="sidebar-overlay"></div>
     <div class="container">
         <aside class="sidebar">
@@ -15,6 +17,7 @@
             
             <div class="btn-group">
                 <button id="show-sql-form-btn" class="btn-sql">SQL-команда</button>
+                <button id="show-ai-form-btn" class="btn-sql">AI-помощник</button>
             </div>
             
             <h2>Таблицы</h2>
@@ -25,7 +28,6 @@
         </aside>
 
         <main class="content">
-
             <div id="sql-form-container" class="form-section hidden">
                 <h2 id="sql-title">Выполнить SQL-команду</h2>
                 <form id="sql-form">
@@ -35,23 +37,38 @@
                     </div>
                     <button type="submit" class="btn-form btn-submit">Выполнить</button>
                 </form>
-                <div id="sql-feedback"></div>
+                <div id="sql-feedback" class="feedback"></div>
+                <div id="sql-result-container" class="table-wrapper hidden">
+                    <table id="sql-result-table">
+                        <thead></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
             </div>
 
-            <div id="data-view-container">
-                <h2 id="data-title">Выберите таблицу или представление для просмотра</h2>
-                
-                <div class="table-controls">
-                </div>
-                
-                <div id="ai-help-container" class="form-section hidden">
-                    <h2 id="ai-help-title">AI-помощник: Группировка наименований</h2>
-                    <p>Найдены новые уникальные наименования, не связанные с существующими группами. Выберите наименование, чтобы получить предложения по группировке.</p>
-                    <div id="unique-names-list" class="list-group"></div>
-                    <div id="ai-suggestions-list" class="list-group"></div>
+            <div id="ai-form-container" class="form-section hidden">
+                <h2 id="ai-help-title">AI-помощник: Группировка наименований</h2>
+                <div id="ai-controls-manual">
+                    <p>Шаг 1: Сгенерировать JSON-промпт для AI.</p>
+                    <button id="generate-prompt-btn" class="btn-form">Сгенерировать промпт</button>
+                    <textarea id="prompt-output" class="hidden" readonly></textarea>
+                    
+                    <p>Шаг 2: Отправить промпт в AI и вставить полученный JSON-ответ ниже.</p>
+                    <textarea id="json-input" placeholder="Вставьте JSON-ответ от AI сюда..."></textarea>
+                    <button id="process-json-btn" class="btn-form">Обработать JSON</button>
                     <div id="ai-feedback" class="feedback"></div>
                 </div>
+                <div id="ai-content-container" class="hidden">
+                    <p>Шаг 3: Проверьте и подтвердите предложения.</p>
+                    <div id="unique-names-container"></div>
+                </div>
+            </div>
 
+            <div class="data-section">
+                <div class="table-controls-header">
+                    <h2 id="data-title">Содержимое таблицы</h2>
+                    <div class="table-controls"></div>
+                </div>
                 <div class="table-wrapper">
                     <table id="data-table">
                         <thead></thead>
@@ -59,19 +76,39 @@
                     </table>
                 </div>
             </div>
+
         </main>
     </div>
 
-    <div id="insert-modal-overlay" class="modal-overlay">
+    <div id="insert-modal-overlay" class="modal-overlay hidden">
         <div class="modal-content">
-            <button class="close-btn">&times;</button>
-            <h2 id="modal-form-title">Добавить запись</h2>
-            <form id="quick-insert-form">
-            </form>
-            <div id="form-feedback"></div>
+            <span class="close-btn">&times;</span>
+            <h3 id="modal-form-title">Добавить запись</h3>
+            <form id="quick-insert-form"></form>
+            <div id="form-feedback" class="feedback"></div>
         </div>
     </div>
-
+    
+    <div id="import-modal-overlay" class="modal-overlay hidden">
+        <div class="modal-content">
+            <span id="import-modal-close-btn" class="close-btn">&times;</span>
+            <h3 id="import-form-title">Импорт данных</h3>
+            <form id="excel-import-form" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="import-file-input">Выберите файл (.xlsx, .xls):</label>
+                    <input type="file" id="import-file-input" name="file" accept=".xlsx, .xls" required>
+                </div>
+                <button type="submit" class="btn-submit">Загрузить и импортировать</button>
+            </form>
+            <div id="import-form-feedback" class="feedback"></div>
+        </div>
+    </div>
+    
+    <!-- 
+        Обновление: Заменили 'dynamic-background.js' на 'dynamic-background.js'.
+        Убедитесь, что этот файл находится в папке 'static'.
+    -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='dynamic-background.js') }}"></script>
 </body>
 </html>

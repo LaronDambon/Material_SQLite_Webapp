@@ -6,11 +6,12 @@ import io
 import requests
 import json
 import re
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 DATABASE = 'database.db'
+ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 
-# Адрес вашего Ollama сервера
 OLLAMA_SERVER_URL = 'http://127.0.0.1:11434'
 OLLAMA_MODEL_NAME = 'gemma3n:e2b'
 
@@ -122,6 +123,60 @@ def add_row(table_name):
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Внутренняя ошибка сервера: {e}'}), 500
 
+@app.route('/api/update/<table_name>/<row_id>', methods=['PUT'])
+def update_row(table_name, row_id):
+    """Обновляет существующую запись в указанной таблице по ID."""
+    try:
+        data = request.get_json()
+        db = get_db()
+        cursor = db.cursor()
+
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        columns_info = {row['name']: row for row in cursor.fetchall()}
+        updateable_columns = [col for col in columns_info if not columns_info[col]['pk']]
+        
+        set_clause = []
+        values = []
+        
+        for col_name in updateable_columns:
+            if col_name in data:
+                set_clause.append(f"{col_name} = ?")
+                values.append(data.get(col_name))
+        
+        if not set_clause:
+            return jsonify({'status': 'error', 'message': 'Нет данных для обновления'}), 400
+        
+        values.append(row_id)
+        query = f"UPDATE {table_name} SET {', '.join(set_clause)} WHERE id = ?"
+        
+        cursor.execute(query, tuple(values))
+        db.commit()
+        
+        if cursor.rowcount == 0:
+            return jsonify({'status': 'error', 'message': 'Запись не найдена'}), 404
+            
+        return jsonify({'status': 'success', 'message': 'Запись успешно обновлена!'})
+    except sqlite3.Error as e:
+        return jsonify({'status': 'error', 'message': f'Ошибка базы данных: {e}'}), 500
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Внутренняя ошибка сервера: {e}'}), 500
+
+@app.route('/api/delete/<table_name>/<row_id>', methods=['DELETE'])
+def delete_row(table_name, row_id):
+    """Удаляет запись из указанной таблицы по ID."""
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        query = f"DELETE FROM {table_name} WHERE id = ?"
+        cursor.execute(query, (row_id,))
+        db.commit()
+        if cursor.rowcount == 0:
+            return jsonify({'status': 'error', 'message': 'Запись не найдена'}), 404
+        return jsonify({'status': 'success', 'message': 'Запись успешно удалена!'})
+    except sqlite3.Error as e:
+        return jsonify({'status': 'error', 'message': f'Ошибка базы данных: {e}'}), 500
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Внутренняя ошибка сервера: {e}'}), 500
 
 @app.route('/api/sql_command', methods=['POST'])
 def execute_sql_command():
@@ -135,10 +190,10 @@ def execute_sql_command():
 
         db = get_db()
         cursor = db.cursor()
-
+        
         if sql_command.upper().startswith(('DROP', 'DELETE')) and 'WHERE' not in sql_command.upper():
             return jsonify({'status': 'error', 'message': 'Опасные команды "DROP" и "DELETE" без "WHERE" запрещены.'}), 403
-            
+
         cursor.execute(sql_command)
         db.commit()
 
@@ -154,153 +209,107 @@ def execute_sql_command():
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Внутренняя ошибка сервера: {e}'}), 500
 
+@app.route('/api/link_altname', methods=['POST'])
+def link_altname():
+    """ Связывает новое наименование с существующей группой altnames. """
+    try:
+        data = request.get_json()
+        new_name = data.get('new_name')
+        group_id = data.get('id')
+        if not new_name:
+            return jsonify({'status': 'error', 'message': 'Недостаточно данных.'}), 400
+        db = get_db()
+        cursor = db.cursor()
+        if group_id is None:
+            # Создаем новую группу (запись в altnames)
+            cursor.execute("INSERT INTO altnames (altname) VALUES (?)", (new_name,))
+            db.commit()
+            return jsonify({'status': 'success', 'message': f"Создана новая группа для наименования '{new_name}'."})
+        else:
+            # Связываем с существующей группой
+            cursor.execute("INSERT INTO altnames (id, altname) VALUES (?, ?)", (group_id, new_name))
+            db.commit()
+            return jsonify({'status': 'success', 'message': f"Наименование '{new_name}' успешно связано с группой ID {group_id}."})
+    except sqlite3.Error as e:
+        return jsonify({'status': 'error', 'message': f'Ошибка базы данных: {e}'}), 500
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Внутренняя ошибка сервера: {e}'}), 500
+
 @app.route('/api/export_to_excel/<table_name>')
 def export_to_excel(table_name):
     """
-    Экспортирует данные из таблицы/представления в Excel-файл
-    и отправляет его пользователю для загрузки.
+    Экспортирует данные из таблицы/представления в Excel-файл и отправляет его пользователю для загрузки.
     """
     try:
         db = get_db()
         df = pd.read_sql_query(f"SELECT * FROM {table_name}", db)
         
+        if df.empty:
+            return jsonify({'status': 'error', 'message': 'Нет данных для экспорта'}), 404
+            
         output = io.BytesIO()
-        
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False, sheet_name=table_name)
         
         output.seek(0)
         
         return send_file(
             output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             as_attachment=True,
-            download_name=f"{table_name}_export.xlsx",
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            download_name=f'{table_name}.xlsx'
         )
+
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f"Ошибка при экспорте: {e}"}), 500
+        return jsonify({'status': 'error', 'message': f'Ошибка экспорта: {e}'}), 500
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route('/api/import_from_excel/<table_name>', methods=['POST'])
 def import_from_excel(table_name):
-    """Импортирует данные из Excel-файла в указанную таблицу."""
-    if 'file' not in request.files:
-        return jsonify({'status': 'error', 'message': 'Файл не найден'}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'status': 'error', 'message': 'Файл не выбран'}), 400
-    
-    if file:
-        try:
-            df = pd.read_excel(file, engine='openpyxl')
+    """
+    Импортирует данные из Excel-файла в указанную таблицу.
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({'status': 'error', 'message': 'Нет файла для импорта'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'status': 'error', 'message': 'Файл не выбран'}), 400
+
+        if file and allowed_file(file.filename):
+            df = pd.read_excel(file)
+            
+            if df.empty:
+                return jsonify({'status': 'error', 'message': 'Файл пуст или имеет некорректный формат'}), 400
+            
             db = get_db()
-            df.to_sql(table_name, db, if_exists='append', index=False)
+            cursor = db.cursor()
+            
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            db_columns = [row['name'] for row in cursor.fetchall()]
+            
+            if not all(col in db_columns for col in df.columns):
+                return jsonify({'status': 'error', 'message': 'Несоответствие столбцов. Убедитесь, что заголовки в файле совпадают с заголовками в таблице.'}), 400
+
+            for index, row in df.iterrows():
+                columns = ', '.join(row.index)
+                placeholders = ', '.join(['?'] * len(row.values))
+                query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+                cursor.execute(query, tuple(row.values))
+            
             db.commit()
-            return jsonify({'status': 'success', 'message': f'Успешно импортировано {len(df)} записей!'})
-        except Exception as e:
-            return jsonify({'status': 'error', 'message': f"Ошибка при импорте: {e}"}), 500
-    
-    return jsonify({'status': 'error', 'message': 'Неизвестная ошибка'}), 500
-
-def extract_json_from_string(text):
-    """
-    Извлекает JSON-массив из строки, игнорируя лишний текст.
-    Ищет шаблон, который начинается с `[` и заканчивается на `]`.
-    """
-    match = re.search(r'\[\s*\{.*\}\s*\]', text, re.DOTALL)
-    if match:
-        return match.group(0)
-    return None
-
-@app.route('/api/ai_suggestions', methods=['POST'])
-def get_ai_suggestions():
-    """
-    Получает предложения от Ollama для нового наименования,
-    сравнивая его с существующими альтернативными именами.
-    """
-    try:
-        data = request.get_json()
-        new_name = data.get('new_name')
-        existing_names = data.get('existing_names')
-
-        if not new_name or not existing_names:
-            return jsonify({'status': 'error', 'message': 'Недостаточно данных для анализа.'}), 400
+            return jsonify({'status': 'success', 'message': f'Успешно импортировано {len(df)} записей.'})
         
-        # Подготовка промпта для Ollama
-        prompt_text = f"""
-        У нас есть новое наименование: '{new_name}'.
-        Есть список существующих групп, где каждый элемент это пара (id, наименование).
-        Твоя задача - найти 3 наиболее подходящих id из списка для нового наименования, основываясь на семантической схожести.
-        Формат ответа - JSON массив, где каждый элемент это объект с полями 'id' (как строка), 'name' и 'similarity' (число от 0 до 1).
-        Не пиши никаких пояснений, только JSON.
-         
-        Список существующих групп:
-        {json.dumps(existing_names, ensure_ascii=False)}
-        """
-
-        ollama_data = {
-            'model': OLLAMA_MODEL_NAME,
-            'prompt': prompt_text,
-            'stream': False,
-            'options': {'num_ctx': 4096}
-        }
-        
-        response = requests.post(f'{OLLAMA_SERVER_URL}/api/generate', json=ollama_data)
-        response.raise_for_status()
-        print(response)
-        # Парсинг ответа Ollama
-        ollama_response = response.json()
-        raw_response = ollama_response['response'].strip()
-        
-        # Используем новую функцию для извлечения JSON
-        json_string = extract_json_from_string(raw_response)
-
-        if not json_string:
-            # Если JSON не был найден, возвращаем пустой массив
-            suggestions = []
         else:
-            suggestions = json.loads(json_string)
-        
-        return jsonify({'status': 'success', 'suggestions': suggestions})
+            return jsonify({'status': 'error', 'message': 'Недопустимый тип файла. Поддерживаются .xlsx, .xls'}), 400
 
-    except requests.exceptions.RequestException as e:
-        return jsonify({'status': 'error', 'message': f'Ошибка при обращении к серверу Ollama: {e}'}), 500
-    except json.JSONDecodeError:
-        return jsonify({'status': 'error', 'message': f'Некорректный формат ответа от Ollama: {raw_response}'}), 500
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Внутренняя ошибка сервера: {e}'}), 500
-
-@app.route('/api/link_altname', methods=['POST'])
-def link_altname():
-    """
-    Связывает новое наименование с существующей группой altnames.
-    """
-    try:
-        data = request.get_json()
-        new_name = data.get('new_name')
-        id = data.get('id')
+        return jsonify({'status': 'error', 'message': f'Ошибка импорта: {e}'}), 500
         
-        if not new_name or id is None:
-            return jsonify({'status': 'error', 'message': 'Недостаточно данных.'}), 400
-        
-        db = get_db()
-        cursor = db.cursor()
-        
-        # Проверяем, существует ли уже такая связь
-        cursor.execute("SELECT * FROM altnames WHERE altname = ? AND id = ?", (new_name, id))
-        if cursor.fetchone():
-            return jsonify({'status': 'error', 'message': f"Наименование '{new_name}' уже связано с группой ID {id}."}), 409
-
-        cursor.execute("INSERT INTO altnames (id, altname) VALUES (?, ?)", (id, new_name))
-        db.commit()
-        
-        return jsonify({'status': 'success', 'message': f"Наименование '{new_name}' успешно связано с группой ID {id}."})
-        
-    except sqlite3.Error as e:
-        return jsonify({'status': 'error', 'message': f'Ошибка базы данных: {e}'}), 500
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Внутренняя ошибка сервера: {e}'}), 500
-
-
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)
+    
